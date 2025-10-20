@@ -1,45 +1,37 @@
 package dogapi;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-/**
- * This BreedFetcher caches fetch request results to improve performance and
- * lessen the load on the underlying data source. An implementation of BreedFetcher
- * must be provided. The number of calls to the underlying fetcher are recorded.
- *
- * If a call to getSubBreeds produces a BreedNotFoundException, then it is NOT cached
- * in this implementation. The provided tests check for this behaviour.
- *
- * The cache maps the name of a breed to its list of sub breed names.
- */
 public class CachingBreedFetcher implements BreedFetcher {
-    private final BreedFetcher fetcher;
-    private final Map<String, List<String>> cache;
+    private final BreedFetcher delegate;
+    private final Map<String, List<String>> cache = new HashMap<>();
     private int callsMade = 0;
 
-    public CachingBreedFetcher(BreedFetcher fetcher) {
-        this.fetcher = fetcher;
-        this.cache = new HashMap<>();
+    public CachingBreedFetcher(BreedFetcher delegate) {
+        this.delegate = delegate;
     }
 
     @Override
     public List<String> getSubBreeds(String breed) throws BreedNotFoundException {
-        // Normalize so case/whitespace variants use the same cache entry
         final String key = (breed == null) ? "" : breed.toLowerCase().trim();
 
-        // 1) Cache hit → return immediately, no delegate call
-        List<String> cached = cache.get(key);
-        if (cached != null) {
-            return cached;
+        // Cache hit → no delegate call and no increment
+        List<String> hit = cache.get(key);
+        if (hit != null) return hit;
+
+        // Cache miss → we WILL call the delegate exactly once
+        callsMade++;  // ✅ count the delegate call regardless of success/failure
+        try {
+            List<String> result = delegate.getSubBreeds(breed);  // may throw
+            // Cache only successful results
+            cache.put(key, result);
+            return result;
+        } catch (BreedNotFoundException e) {
+            // Do NOT cache failures; just propagate
+            throw e;
         }
-
-        // 2) Cache miss → exactly ONE delegate call
-        callsMade++; // (some tests also check the delegate’s own counter—this doesn’t affect it)
-        List<String> result = fetcher.getSubBreeds(breed); // may throw
-
-        // 3) Cache only successful lookups
-        cache.put(key, result);
-        return result;
     }
 
     public int getCallsMade() {
