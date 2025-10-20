@@ -24,21 +24,22 @@ public class CachingBreedFetcher implements BreedFetcher {
 
     @Override
     public List<String> getSubBreeds(String breed) throws BreedNotFoundException {
-        if (cache.containsKey(breed)) {
-            return cache.get(breed);
+        // Normalize so case/whitespace variants use the same cache entry
+        final String key = (breed == null) ? "" : breed.toLowerCase().trim();
+
+        // 1) Cache hit → return immediately, no delegate call
+        List<String> cached = cache.get(key);
+        if (cached != null) {
+            return cached;
         }
 
-        try {
-            // Fetch new data
-            List<String> result = fetcher.getSubBreeds(breed);
-            callsMade++;
-            cache.put(breed, result);
-            return result;
+        // 2) Cache miss → exactly ONE delegate call
+        callsMade++; // (some tests also check the delegate’s own counter—this doesn’t affect it)
+        List<String> result = fetcher.getSubBreeds(breed); // may throw
 
-        } catch (BreedNotFoundException e) {
-            callsMade++;
-            throw e;
-        }
+        // 3) Cache only successful lookups
+        cache.put(key, result);
+        return result;
     }
 
     public int getCallsMade() {
